@@ -4,6 +4,7 @@
 #include "x86dec.h"
 
 #include "sc_hook.h"
+#include <stdexcept>
 int hookflag_regs[8] = { hookflag_eax,hookflag_ecx,hookflag_edx,hookflag_ebx,hookflag_esp,hookflag_ebp,hookflag_esi,hookflag_edi };
 
 void* hook_generate_entry(void* address, void* out_ins, size_t* out_size, void* read_address, void* write_address) {

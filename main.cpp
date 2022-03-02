@@ -244,7 +244,7 @@ void* g_player_colors = (void*)0x57F21C;
 
 int& g_frame_count = *(int*)0x057F23C;
 
-bool opt_host_game = false;
+int opt_host_game = 0;
 std::string opt_player_name = "playername";
 std::string opt_game_name;
 std::string opt_map_fn;
@@ -255,7 +255,6 @@ std::string opt_installpath;
 bool opt_headful = false;
 
 void run() {
-
 	bool host_game = opt_host_game;
 	const char* game_name = opt_game_name.c_str();
 
@@ -318,10 +317,18 @@ void run() {
 
 		//log("scenario name: '%s'  description: '%s'\n", remove_nonprintable(scenario_name).c_str(), remove_nonprintable(scenario_description).c_str());
 
-		void* players_struct = (void*)0x59BDB0;
+		void* players_struct = (void*)(0x59BDB0);
 		int players_count = 0;
 		for (size_t i = 0; i < 12; ++i) {
-			int type = offset<uint8_t>(players_struct, 0x24 * i);
+			int type = offset<uint8_t>(players_struct, 0x24 * i + 8);
+			/* For future reference (taken from ShieldBattery):
+				offset<uint32_t>(players_struct, 0x24 * i) = i; // id
+				offset<uint32_t>(players_struct, 0x24 * i + 4) = INT_MAX; // storm  id
+				offset<uint8_t>(players_struct, 0x24 * i + 8) = 0x06; // Player type - open
+				offset<uint8_t>(players_struct, 0x24 * i + 9) = 0x06; // Race - random
+				offset<uint8_t>(players_struct, 0x24 * i + 10) = 0x00; // Team
+				memset(&offset<char>(players_struct, 0x24 * i), 0, 25); // Name
+			*/
 			if (type == 2 || type == 6) ++players_count;
 		}
 
@@ -336,7 +343,7 @@ void run() {
 		offset<uint16_t>(&create_info, 0x20) = map_tile_width;
 		offset<uint16_t>(&create_info, 0x22) = map_tile_height;
 
-		uint32_t game_type = 0x10002;
+		uint32_t game_type = 0x10002; // Melee
 
 		offset<uint8_t>(&create_info, 0x24) = 1; // active player count
 		offset<uint8_t>(&create_info, 0x25) = players_count;
@@ -472,7 +479,7 @@ void run() {
 				int type = offset<uint8_t>(players_struct, 0x24 * i + 8);
 				if (type == 2) ++occupied_count;
 			}
-			if (occupied_count >= 2) {
+			if (occupied_count >= opt_host_game) {
 				started = ((bool(*)())0x452460)();
 				if (started) log("starting game\n");
 			}
@@ -922,7 +929,7 @@ int parse_args(int argc, const char** argv) {
 		log("A tool to start StarCraft: Brood War as a console application, with no graphics, sound or user input.\n");
 		log("\n");
 		log("  -e, --exe         The exe file to launch. Default 'StarCraft.exe'.\n");
-		log("  -h, --host        Host a game instead of joining.\n");
+		log("  -h, --host <n>    Host a game with the given number of players instead of joining.\n");
 		log("  -j, --join        Join instead of hosting. The first game that is found\n");
 		log("                    will be joined.\n");
 		log("  -n, --name NAME   The player name. Default 'playername'.\n");
@@ -964,9 +971,9 @@ int parse_args(int argc, const char** argv) {
 		if (!strcmp(s, "--exe") || !strcmp(s, "-e")) {
 			exe_path = parm();
 		} else if (!strcmp(s, "--host") || !strcmp(s, "-h")) {
-			opt_host_game = true;
+			opt_host_game = std::atoi(parm());
 		} else if (!strcmp(s, "--join") || !strcmp(s, "-j")) {
-			opt_host_game = false;
+			opt_host_game = 0;
 		} else if (!strcmp(s, "--name") || !strcmp(s, "-n")) {
 			opt_player_name = parm();
 		} else if (!strcmp(s, "--game") || !strcmp(s, "-g")) {
