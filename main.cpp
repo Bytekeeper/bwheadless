@@ -101,6 +101,16 @@ int InitializeNetworkProvider(int id) {
 	return r;
 }
 
+void SwapPlayers(byte a, byte b) {
+	byte data[] = { 69, a, b };
+	__asm {
+		lea ebx, data;
+		push 0;
+		mov edx, 0x471860;
+		call edx;
+	}
+}
+
 template<typename F>
 void enum_games(const F& f) {
 	void* f_ptr = (void*)&f;
@@ -248,6 +258,8 @@ int opt_host_game = 0;
 std::string opt_player_name = "playername";
 std::string opt_game_name;
 std::string opt_map_fn;
+int opt_game_type = 0x10002; // Default to Melee
+int opt_game_speed = 3;
 int opt_race = 6;
 std::string opt_network_provider = "SMEM";
 uint32_t opt_lan_sendto = 0;
@@ -324,7 +336,7 @@ void run() {
 			/* For future reference (taken from ShieldBattery):
 				offset<uint32_t>(players_struct, 0x24 * i) = i; // id
 				offset<uint32_t>(players_struct, 0x24 * i + 4) = INT_MAX; // storm  id
-				offset<uint8_t>(players_struct, 0x24 * i + 8) = 0x06; // Player type - open
+				offset<uint8_t>(players_struct, 0x24 * i + 8) = 0x06; // Player type - 6 open, 2 human, 5 CPU, 8 closed
 				offset<uint8_t>(players_struct, 0x24 * i + 9) = 0x06; // Race - random
 				offset<uint8_t>(players_struct, 0x24 * i + 10) = 0x00; // Team
 				memset(&offset<char>(players_struct, 0x24 * i), 0, 25); // Name
@@ -343,17 +355,19 @@ void run() {
 		offset<uint16_t>(&create_info, 0x20) = map_tile_width;
 		offset<uint16_t>(&create_info, 0x22) = map_tile_height;
 
-		uint32_t game_type = 0x10002; // Melee
+		uint32_t game_type = opt_game_type;
 
 		offset<uint8_t>(&create_info, 0x24) = 1; // active player count
 		offset<uint8_t>(&create_info, 0x25) = players_count;
-		offset<uint8_t>(&create_info, 0x26) = 6; // game speed
+		offset<uint8_t>(&create_info, 0x26) = opt_game_speed; // game speed
 		offset<uint8_t>(&create_info, 0x27) = 1; // game state?
-		offset<uint32_t>(&create_info, 0x28) = game_type; // game type (melee)
+		offset<uint32_t>(&create_info, 0x28) = game_type; // game type
+		//offset<uint32_t>(&create_info, 0x28) = 0x4000f;
 		offset<uint16_t>(&create_info, 0x30) = g_tileset;
 
-		offset<uint32_t>(&create_info, 0x6d) = game_type; // game type (melee)
+		offset<uint32_t>(&create_info, 0x6d) = game_type; // game type
 		offset<uint16_t>(&create_info, 0x71) = 0;
+		//offset<uint16_t>(&create_info, 0x71) = 4;
 		offset<uint16_t>(&create_info, 0x73) = 0;
 
 		offset<uint8_t>(&create_info, 0x75) = 1; // various game settings stuff
@@ -363,8 +377,9 @@ void run() {
 		offset<uint8_t>(&create_info, 0x79) = 2;
 		offset<uint8_t>(&create_info, 0x7a) = 0;
 		offset<uint8_t>(&create_info, 0x7b) = 3;
+	//	offset<uint8_t>(&create_info, 0x7b) = 1;
 		offset<uint8_t>(&create_info, 0x7c) = 1;
-		offset<uint8_t>(&create_info, 0x7d) = 0;
+		offset<uint8_t>(&create_info, 0x7d) = 0; // Cheats enabled
 		offset<uint8_t>(&create_info, 0x7e) = 1;
 
 		offset<uint32_t>(&create_info, 0x84) = 50; // starting minerals
@@ -390,6 +405,27 @@ void run() {
 		}
 
 		memcpy(g_game_data, create_info.data(), create_info.size());
+		/*
+		for (size_t i = 0; i < 12; ++i) {
+			int type = offset<uint8_t>(players_struct, 0x24 * i + 8);
+			if (game_type != 0x10002) {
+				if (i < 4) {
+					offset<uint8_t>(g_players, 0x24 * i + 10) = 1;
+				}
+				else if (i < 8) {
+					offset<uint8_t>(g_players, 0x24 * i + 10) = 2;
+				}
+			}
+			/* For future reference (taken from ShieldBattery):
+				offset<uint32_t>(players_struct, 0x24 * i) = i; // id
+				offset<uint32_t>(players_struct, 0x24 * i + 4) = INT_MAX; // storm  id
+				offset<uint8_t>(players_struct, 0x24 * i + 8) = 0x06; // Player type - 6 open, 2 human, 5 CPU, 8 closed
+				offset<uint8_t>(players_struct, 0x24 * i + 9) = 0x06; // Race - random
+				offset<uint8_t>(players_struct, 0x24 * i + 10) = 0x00; // Team
+				memset(&offset<char>(players_struct, 0x24 * i), 0, 25); // Name
+			
+		}
+		*/
 		g_is_host = 1;
 
 		log("game hosted\n");
@@ -477,6 +513,12 @@ void run() {
 			int occupied_count = 0;
 			for (size_t i = 0; i < 12; ++i) {
 				int type = offset<uint8_t>(players_struct, 0x24 * i + 8);
+				/*
+				if (i == 1 && type == 2) {
+					log("Switching player from 1 to 4");
+					SwapPlayers(1, 4);
+				}
+				*/
 				if (type == 2) ++occupied_count;
 			}
 			if (occupied_count >= opt_host_game) {
@@ -790,7 +832,7 @@ void _ConnectNamedPipe_pre(hook_struct* e, hook_function* _f) {
 	}
 }
 
-// BWAPI reads StarCraft's InstallPath from the registry to locate bwapi.ini.
+// BWAPI < 4.x reads StarCraft's InstallPath from the registry to locate bwapi.ini.
 // The fallback path is blank, which it appends a slash to, so we provide a
 // better fallback here.
 void _SRegLoadString_post(hook_struct* e, hook_function* _f) {
@@ -835,7 +877,7 @@ void init() {
 	hook(GetProcAddress(kernel32, "ConnectNamedPipe"), _ConnectNamedPipe_pre, nullptr, HOOK_STDCALL, 2);
 
 	HMODULE storm = GetModuleHandleA("storm.dll");
-	if (!kernel32) fatal_error("storm.dll is null");
+	if (!storm) fatal_error("storm.dll is null");
 	hook(GetProcAddress(storm, (char*)422), nullptr, _SRegLoadString_post, HOOK_STDCALL, 5);
 
 	if (opt_lan_sendto) {
@@ -928,29 +970,32 @@ int parse_args(int argc, const char** argv) {
 		log("Usage: %s [option]...\n", argv[0]);
 		log("A tool to start StarCraft: Brood War as a console application, with no graphics, sound or user input.\n");
 		log("\n");
-		log("  -e, --exe         The exe file to launch. Default 'StarCraft.exe'.\n");
-		log("  -h, --host <n>    Host a game with the given number of players instead of joining.\n");
-		log("  -j, --join        Join instead of hosting. The first game that is found\n");
+		log("  -e,  --exe         The exe file to launch. Default 'StarCraft.exe'.\n");
+		log("  -h,  --host <n>    Host a game with the given number of players instead of joining.\n");
+		log("  -gt, --gametype GAME_TYPE   Select a game type (currently Melee/TopVBottom are supported)");
+		log("  -gst,--gamesubtype PARAM    Set team size for team games");
+		log("  -j,  --join        Join instead of hosting. The first game that is found\n");
 		log("                    will be joined.\n");
-		log("  -n, --name NAME   The player name. Default 'playername'.\n");
-		log("  -g, --game NAME   The game name when hosting. Defaults to the player name.\n");
+		log("  -n,  --name NAME   The player name. Default 'playername'.\n");
+		log("  -g,  --game NAME   The game name when hosting. Defaults to the player name.\n");
 		log("                    If this option is specified when joining, then only games\n");
 		log("                    with the specified name will be joined.\n");
-		log("  -m, --map FILE    The map to use when hosting.\n");
-		log("  -r, --race RACE   Zerg/Terran/Protoss/Random/Z/T/P/R (case insensitive).\n");
-		log("  -l, --dll DLL     Load DLL into StarCraft. This option can be\n");
+		log("  -m,  --map FILE    The map to use when hosting.\n");
+		log("  -r,  --race RACE   Zerg/Terran/Protoss/Random/Z/T/P/R (case insensitive).\n");
+		log("  -l,  --dll DLL     Load DLL into StarCraft. This option can be\n");
 		log("                    specified multiple times to load multiple dlls.\n");
-		log("      --networkprovider NAME  Use the specified network provider.\n");
+		log("  -gs	--gamespeed <n> 0 - slowest ... 6 - fastest");
+		log("       --networkprovider NAME  Use the specified network provider.\n");
 		log("                              'UDPN' is LAN (UDP), 'SMEM' is Local PC (provided\n");
 		log("                              by BWAPI). Others are provided by .snp files and\n");
 		log("                              may or may not work. Default SMEM.\n");
-		log("      --lan         Sets the network provider to LAN (UDP).\n");
-		log("      --localpc     Sets the network provider to Local PC (this is default).\n");
-		log("      --lan-sendto IP  Overrides the IP that UDP packets are sent to. This\n");
+		log("       --lan         Sets the network provider to LAN (UDP).\n");
+		log("       --localpc     Sets the network provider to Local PC (this is default).\n");
+		log("       --lan-sendto IP  Overrides the IP that UDP packets are sent to. This\n");
 		log("                       can be used together with --lan to connect to a\n");
 		log("                       specified IP-address instead of broadcasting for games\n");
 		log("                       on LAN (The ports used is 6111 and 6112).\n");
-		log("      --installpath PATH  Overrides the InstallPath value that would usually\n");
+		log("       --installpath PATH  Overrides the InstallPath value that would usually\n");
 		log("                          be read from the registry. This is used by BWAPI to\n");
 		log("                          locate bwapi-data/bwapi.ini.\n");
 	};
@@ -976,8 +1021,21 @@ int parse_args(int argc, const char** argv) {
 			opt_host_game = 0;
 		} else if (!strcmp(s, "--name") || !strcmp(s, "-n")) {
 			opt_player_name = parm();
-		} else if (!strcmp(s, "--game") || !strcmp(s, "-g")) {
+		}
+		else if (!strcmp(s, "--game") || !strcmp(s, "-g")) {
 			opt_game_name = parm();
+		}
+		else if (!strcmp(s, "--gametype") || !strcmp(s, "-gt")) {
+			const char* str = parm();
+			if (!_stricmp(str, "melee")) opt_game_type = 0x10002;
+			else if (!_stricmp(str, "topvbottom")) {
+				opt_game_type = 0xf;
+			} else {
+				usage();
+				return -1;
+			}
+		} else if (!strcmp(s, "--gamesubtype") || !strcmp(s, "-gst")) {
+			opt_game_type |= std::atoi(parm()) << 16;
 		} else if (!strcmp(s, "--map") || !strcmp(s, "-m")) {
 			opt_map_fn = parm();
 		} else if (!strcmp(s, "--race") || !strcmp(s, "-r")) {
@@ -987,9 +1045,12 @@ int parse_args(int argc, const char** argv) {
 			else if (!_stricmp(str, "protoss") || !_stricmp(str, "p")) opt_race = 2;
 			else if (!_stricmp(str, "random") || !_stricmp(str, "r")) opt_race = 6;
 			else opt_race = std::atoi(str);
-		} else if (!strcmp(s, "--help")) {
+		}
+		else if (!strcmp(s, "--help")) {
 			usage();
 			return -1;
+		} else if (!strcmp(s, "--gamespeed") || !strcmp(s, "-gs")) {
+			opt_game_speed = std::atoi(parm());
 		} else if (!strcmp(s, "--dll") || !strcmp(s, "-l")) {
 			opt_dlls.push_back(parm());
 		} else if (!strcmp(s, "--networkprovider")) {

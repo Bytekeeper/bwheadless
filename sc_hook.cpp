@@ -1,3 +1,5 @@
+typedef struct IUnknown IUnknown;
+
 #include <cstdint>
 
 #include "codegen.h"
